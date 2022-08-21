@@ -1,7 +1,8 @@
 "use strict";
 
-require("dotenv").config();
+const dotenv = require("dotenv").config();
 const puppeteer = require("puppeteer");
+const xlsx = require("xlsx");
 
 (async function main() {
   try {
@@ -63,14 +64,33 @@ const puppeteer = require("puppeteer");
 
         document.querySelector("button.pagination-nav.right").click();
       }
-      return { playersURL, maxPagination };
+      return playersURL;
     });
 
-    /*     for (const player of grabPlayersJSON) {
-      console.log(player);
-    } */
-    console.log(grabPlayersJSON);
-    //await await browser.close();
+    const playersData = [];
+    for (const player of grabPlayersJSON) {
+      await page.goto(player);
+      const jsonData = await page.evaluate(() => {
+        return JSON.parse(document.querySelector("body").innerText);
+      });
+
+      playersData.push({
+        name: jsonData.player.name,
+        price: jsonData.stats[0].value,
+        selectionPercentage: jsonData.stats[1].value,
+        points: jsonData.stats[3].value,
+        avgPoints: jsonData.stats[5].value,
+        position: jsonData.player.position_label,
+      });
+    }
+
+    //Creates excel with the players data
+    const workbook = xlsx.utils.book_new();
+    const worksheet = xlsx.utils.json_to_sheet(playersData);
+    xlsx.utils.book_append_sheet(workbook, worksheet);
+    xlsx.writeFile(workbook, "players.xlsx");
+
+    await browser.close();
   } catch (err) {
     console.error(err);
   }
