@@ -44,51 +44,78 @@ const xlsx = require("xlsx");
     await page.click("div>.sa-button-container > button.confirm");
 
     //get the players json
-    const grabPlayersJSON = await page.evaluate(() => {
+    const [grabPlayersJSON, playersData] = await page.evaluate(() => {
       let playersURL = [];
+      let playerInitialData = [];
+      let dataObj = {};
+
       const maxPagination = document
         .querySelector(".pagination-results")
         .innerText.split(" ")
         .splice(-1);
 
       for (let i = 1; i <= maxPagination; i++) {
-        const row = document.querySelectorAll(
+        const span = document.querySelectorAll(
           "tbody > tr > td.text-left.player-name > span"
         );
+        const row = document.querySelectorAll("tbody > tr");
 
-        row.forEach((playerURL) =>
+        span.forEach((playerURL, index) => {
           playersURL.push(
             "https://fantasy.realfevr.com/" + playerURL.getAttribute("data-url")
-          )
-        );
+          );
+
+          dataObj = [
+            {
+              goals: row[index].getAttribute("data-goals-scored"),
+              assists: row[index].getAttribute("data-assists"),
+              cleanSheet: row[index].getAttribute("data-clean-sheet"),
+            },
+          ];
+
+          playerInitialData.push(dataObj);
+        });
 
         document.querySelector("button.pagination-nav.right").click();
       }
-      return playersURL;
+      return [playersURL, playerInitialData];
     });
 
-    const playersData = [];
+    let exportData = [];
+
     for (const player of grabPlayersJSON) {
+      let i = 0;
+      let dataObj = {};
+      if (i == 2) {
+        return;
+      }
       await page.goto(player);
       const jsonData = await page.evaluate(() => {
         return JSON.parse(document.querySelector("body").innerText);
       });
 
-      playersData.push({
+      dataObj = {
         name: jsonData.player.name,
-        price: jsonData.stats[0].value,
-        selectionPercentage: jsonData.stats[1].value,
-        points: jsonData.stats[3].value,
-        avgPoints: jsonData.stats[5].value,
         position: jsonData.player.position_label,
-      });
+        price: jsonData.stats[0].value,
+        points: jsonData.stats[3].value,
+        selectionPercentage: jsonData.stats[1].value,
+        avgPoints: jsonData.stats[5].value,
+      };
+
+      exportData.push(Object.assign({}, dataObj, ...playersData[i]));
+
+      i++;
     }
+
+    //todays date
+    let currentDate = new Date().toJSON().slice(0, 10);
 
     //Creates excel with the players data
     const workbook = xlsx.utils.book_new();
-    const worksheet = xlsx.utils.json_to_sheet(playersData);
-    xlsx.utils.book_append_sheet(workbook, worksheet);
-    xlsx.writeFile(workbook, "players.xlsx");
+    const worksheet = xlsx.utils.json_to_sheet(exportData);
+    xlsx.utils.book_append_sheet(workbook, worksheet, `${currentDate}`);
+    xlsx.writeFile(workbook, `players.xlsx`);
 
     await browser.close();
   } catch (err) {
